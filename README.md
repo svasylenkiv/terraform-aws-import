@@ -68,20 +68,24 @@ filter {
 | Workflow | Коли | Що робить |
 |----------|------|-----------|
 | **Bootstrap** | Manual | Створює S3 bucket + DynamoDB для state (запусти один раз) |
-| **Terraform Plan** | PR або manual | `terraform plan` — показує drift, зміни (обирай dev/stg/prd) |
-| **Terraform Import** | Manual | `terraform query` → згенерує `generated.tf` → артефакт (обирай dev/stg/prd) |
+| **Terraform Plan / Apply** | PR або manual | `plan` — перевірка drift; `apply` — застосування змін (в т.ч. імпорт) |
+| **Terraform Import** | Manual | `terraform query` → згенерує `generated.tf` → артефакт (для bulk import за тегами) |
 
-## Процес імпорту
+## Процес імпорту (self-service)
 
-```
+**Через workflow:**
+
+1. Додай у `environments/<env>/` файл з `import` block + `resource` (див. [docs/IMPORT-GUIDE.md](docs/IMPORT-GUIDE.md))
+2. Запусти **Terraform Plan / Apply** → Environment: dev/stg/prd, Action: **plan** — перевір зміни
+3. Запусти **Terraform Plan / Apply** → Environment: ..., Action: **apply**
+4. Видали `import` block після успішного apply
+
+**Через Terraform Import (Discover)** — для bulk import за тегами:
+
 1. Запусти "Terraform Import" workflow
-2. Завантаж артефакт terraform-generated-config (generated.tf)
-3. Переглянь generated.tf — resource + import blocks
-4. Скопіюй потрібні блоки в main.tf або окремі *.tf
-5. Видаліть import blocks після успішного apply (або залиш для історії)
-6. Зроби apply (через workflow або terraform apply локально)
-7. Запусти Plan — має бути "No changes"
-```
+2. Завантаж артефакт generated.tf
+3. Скопіюй resource + import blocks у environments/\<env>/
+4. Запусти **Terraform Plan / Apply** з action **apply**
 
 ## Одиночний імпорт (без bulk query)
 
@@ -143,4 +147,5 @@ terraform-aws-import/
 
 ## Детальний план
 
-Деталі архітектури та workflow — у [docs/PLAN.md](docs/PLAN.md).
+- [docs/PLAN.md](docs/PLAN.md) — архітектура та workflow
+- [docs/IMPORT-GUIDE.md](docs/IMPORT-GUIDE.md) — як імпортувати ресурси через workflow (self-service)

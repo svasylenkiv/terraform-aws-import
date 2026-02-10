@@ -1,5 +1,5 @@
-name: Terraform Plan
-run-name: "Terraform Plan — ${{ inputs.environment || 'dev' }}"
+name: Terraform Plan / Apply
+run-name: "Terraform ${{ inputs.action || 'plan' }} — ${{ inputs.environment || 'dev' }}"
 
 on:
   pull_request:
@@ -17,6 +17,13 @@ on:
           - dev
           - stg
           - prd
+      action:
+        description: "Action"
+        required: true
+        type: choice
+        options:
+          - plan
+          - apply
 
 permissions:
   contents: read
@@ -56,8 +63,8 @@ jobs:
       - name: Terraform Validate
         run: terraform validate
 
-  plan:
-    name: "Terraform Plan (${{ inputs.environment }})"
+  terraform:
+    name: "Terraform ${{ inputs.action }} (${{ inputs.environment }})"
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
@@ -102,5 +109,20 @@ jobs:
         run: terraform validate
 
       - name: Terraform Plan
+        if: inputs.action == 'plan'
         run: terraform plan -input=false -no-color -var-file=terraform.tfvars
         continue-on-error: true
+
+      - name: Terraform Plan (before apply)
+        if: inputs.action == 'apply'
+        run: terraform plan -input=false -out=tfplan -var-file=terraform.tfvars
+
+      - name: Terraform Apply
+        if: inputs.action == 'apply'
+        run: terraform apply -input=false -auto-approve tfplan
+
+      - name: Show Outputs
+        if: inputs.action == 'apply'
+        run: terraform output
+        continue-on-error: true
+
