@@ -1,0 +1,119 @@
+name: Import Resource to State
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment (state)"
+        required: true
+        type: choice
+        options:
+          - dev
+          - stg
+          - prd
+      resource_type:
+        description: "Resource type"
+        required: true
+        type: choice
+        options:
+          - aws_s3_bucket
+      resource_name:
+        description: "Terraform resource name (e.g. nord_dev)"
+        required: true
+        type: string
+      resource_id:
+        description: "Resource ID for import (e.g. bucket name for S3)"
+        required: true
+        type: string
+
+permissions:
+  contents: write  # read + write for commit
+
+env:
+  AWS_REGION: us-east-1
+  TF_VERSION: "1.12.0"
+
+jobs:
+  import:
+    name: "Import ${{ inputs.resource_type }}.${{ inputs.resource_name }} to ${{ inputs.environment }}"
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    defaults:
+      run:
+        working-directory: environments/${{ inputs.environment }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Read project name
+        id: vars
+        run: |
+          PROJECT=$(grep '^project' terraform.tfvars | awk -F'"' '{print $2}')
+          echo "project=$PROJECT" >> "$GITHUB_OUTPUT"
+
+      - name: Create resource config
+        id: create_config
+        run: |
+          CREATED="false"
+          if ! grep -rq "resource \"${{ inputs.resource_type }}\" \"${{ inputs.resource_name }}\"" *.tf 2>/dev/null; then
+            case "${{ inputs.resource_type }}" in
+              aws_s3_bucket)
+                cat > import_${{ inputs.resource_name }}.tf << 'TFEOF'
+          resource "aws_s3_bucket" "RESOURCE_NAME" {
+            bucket = "RESOURCE_ID"
+          }
+          TFEOF
+                sed -i "s/RESOURCE_NAME/${{ inputs.resource_name }}/g; s/RESOURCE_ID/${{ inputs.resource_id }}/g" import_${{ inputs.resource_name }}.tf
+                CREATED="true"
+                ;;
+              *)
+                echo "Unsupported resource type: ${{ inputs.resource_type }}"
+                exit 1
+                ;;
+            esac
+            echo "Created config:"
+            cat import_${{ inputs.resource_name }}.tf
+          else
+            echo "Resource already in config, skipping file creation"
+          fi
+          echo "created=$CREATED" >> "$GITHUB_OUTPUT"
+
+      - name: Terraform Init
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ steps.vars.outputs.project }}-terraform-state" \
+            -backend-config="dynamodb_table=${{ steps.vars.outputs.project }}-terraform-lock"
+
+      - name: Terraform Import
+        run: |
+          terraform import \
+            -var-file=terraform.tfvars \
+            ${{ inputs.resource_type }}.${{ inputs.resource_name }} \
+            "${{ inputs.resource_id }}"
+
+      - name: Commit and push
+        if: steps.create_config.outputs.created == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add import_${{ inputs.resource_name }}.tf
+          git status
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Import ${{ inputs.resource_type }}.${{ inputs.resource_name }} (${{ inputs.resource_id }})"
+            git push
+          fi

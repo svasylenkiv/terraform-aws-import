@@ -68,17 +68,23 @@ filter {
 | Workflow | Коли | Що робить |
 |----------|------|-----------|
 | **Bootstrap** | Manual | Створює S3 bucket + DynamoDB для state (запусти один раз) |
-| **Terraform Plan / Apply** | PR або manual | `plan` — перевірка drift; `apply` — застосування змін (в т.ч. імпорт) |
-| **Terraform Import** | Manual | `terraform query` → згенерує `generated.tf` → артефакт (для bulk import за тегами) |
+| **Import Resource to State** | Manual | Ввів ID → обрал state → імпорт в S3 (підтримка: aws_s3_bucket) |
+| **Terraform Plan / Apply** | PR або manual | `plan` — перевірка drift; `apply` — застосування змін |
+| **Terraform Import** | Manual | `terraform query` → bulk import за тегами |
 
-## Процес імпорту (self-service)
+## Процес імпорту
 
-**Через workflow:**
+**Найпростіший варіант — Import Resource to State:**
 
-1. Додай у `environments/<env>/` файл з `import` block + `resource` (див. [docs/IMPORT-GUIDE.md](docs/IMPORT-GUIDE.md))
-2. Запусти **Terraform Plan / Apply** → Environment: dev/stg/prd, Action: **plan** — перевір зміни
-3. Запусти **Terraform Plan / Apply** → Environment: ..., Action: **apply**
-4. Видали `import` block після успішного apply
+1. Actions → **Import Resource to State** → Run workflow
+2. Environment: dev / stg / prd (куди імпортувати)
+3. Resource type: aws_s3_bucket
+4. Resource name: наприклад `nord_dev`
+5. Resource ID: назва bucket (наприклад `nord-dev-s3`)
+
+Workflow сам додасть мінімальний конфіг і закомітить. State — в S3.
+
+**Через Plan/Apply** (див. [docs/IMPORT-GUIDE.md](docs/IMPORT-GUIDE.md)) — для import block + apply.
 
 **Через Terraform Import (Discover)** — для bulk import за тегами:
 
@@ -111,9 +117,10 @@ terraform apply
 ```
 terraform-aws-import/
 ├── .github/workflows/
-│   ├── bootstrap.yml           # Створює S3 + DynamoDB (запусти один раз)
-│   ├── terraform-plan.yml      # Plan (PR + manual)
-│   └── terraform-import.yml    # Query + generate config
+│   ├── bootstrap.yml               # Створює S3 + DynamoDB (запусти один раз)
+│   ├── terraform-import-resource.yml  # Import: ID + state → done
+│   ├── terraform-plan.yml          # Plan (PR + manual)
+│   └── terraform-import.yml        # Query + bulk import
 ├── bootstrap/
 │   ├── main.tf                 # S3 bucket + DynamoDB table
 │   └── terraform.tfvars
