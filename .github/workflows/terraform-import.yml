@@ -1,0 +1,72 @@
+name: Terraform Import (Discover)
+run-name: "Terraform Query — Generate config for import"
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment"
+        required: true
+        type: choice
+        options:
+          - dev
+          - stg
+          - prd
+
+permissions:
+  contents: read
+
+env:
+  AWS_REGION: us-east-1
+  TF_VERSION: "1.12.0"
+
+jobs:
+  discover:
+    name: "Discover & Generate (${{ inputs.environment }})"
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    defaults:
+      run:
+        working-directory: environments/${{ inputs.environment }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init (no backend)
+        run: terraform init -backend=false
+
+      - name: Copy query config
+        run: |
+          if [ -f ../../queries/discover-by-tags-${{ inputs.environment }}.tfquery.hcl ]; then
+            cp ../../queries/discover-by-tags-${{ inputs.environment }}.tfquery.hcl .tfquery.hcl
+          else
+            cp ../../queries/discover-by-tags.tfquery.hcl .tfquery.hcl
+          fi
+          echo "Query config copied for ${{ inputs.environment }}"
+
+      - name: Terraform Query (generate config)
+        run: terraform query -generate-config-out=generated.tf
+
+      - name: Upload generated.tf
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-generated-config-${{ inputs.environment }}
+          path: environments/${{ inputs.environment }}/generated.tf
+
+      - name: Show generated config
+        run: |
+          echo "=== generated.tf ==="
+          cat generated.tf || true
