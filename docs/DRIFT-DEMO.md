@@ -7,7 +7,16 @@
 - Є S3 bucket `nord-dev-s3` в AWS (з тегами, encryption, versioning)
 - Ресурс **не** в Terraform state
 
-## Крок 1. Мінімальний конфіг + імпорт
+## Крок 1. Init (S3 backend) + мінімальний конфіг + імпорт
+
+Спочатку init з backend — щоб state йшов у S3, а не локально:
+
+```bash
+cd environments/dev
+terraform init \
+  -backend-config="bucket=terraform-aws-import-terraform-state" \
+  -backend-config="dynamodb_table=terraform-aws-import-terraform-lock"
+```
 
 Додай у `environments/dev/s3.tf`:
 
@@ -17,10 +26,9 @@ resource "aws_s3_bucket" "nord_dev" {
 }
 ```
 
-Імпортуй (CLI — тільки в state, без apply):
+Імпортуй (CLI — тільки в state, без apply). State потрапляє в S3:
 
 ```bash
-cd environments/dev
 terraform import -var-file=terraform.tfvars aws_s3_bucket.nord_dev nord-dev-s3
 ```
 
@@ -67,6 +75,14 @@ terraform plan -input=false -var-file=terraform.tfvars
 ```
 No changes. Your infrastructure matches the configuration.
 ```
+
+---
+
+## State: локальний чи S3?
+
+**Важливо:** Перед `terraform import` обовʼязково зроби `terraform init` з backend config. Інакше state буде локальним (файл `terraform.tfstate` у папці).
+
+З init + backend state зберігається в S3: `s3://terraform-aws-import-terraform-state/dev/terraform.tfstate`.
 
 ---
 
