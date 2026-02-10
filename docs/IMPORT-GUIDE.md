@@ -1,5 +1,7 @@
 # Як імпортувати ресурси через workflow
 
+**Демо drift:** [docs/DRIFT-DEMO.md](DRIFT-DEMO.md) — import → plan (drift) → опис → plan (no drift)
+
 ## Почому два способи?
 
 1. **Terraform Import (Discover)** — для *bulk import*: шукає ресурси за тегами через `terraform query`. Підтримує не всі типи (EC2, VPC — так; S3 — потрібно перевіряти).
