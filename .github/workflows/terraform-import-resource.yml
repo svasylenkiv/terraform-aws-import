@@ -104,6 +104,31 @@ jobs:
             ${{ inputs.resource_type }}.${{ inputs.resource_name }} \
             "${{ inputs.resource_id }}"
 
+      - name: Describe resource (fetch tags from AWS)
+        if: inputs.resource_type == 'aws_s3_bucket' && steps.create_config.outputs.created == 'true'
+        run: |
+          FILE="import_${{ inputs.resource_name }}.tf"
+          TAGS_JSON=$(aws s3api get-bucket-tagging --bucket "${{ inputs.resource_id }}" 2>/dev/null || echo '{"TagSet":[]}')
+          TAGS_HCL=""
+          if [ "$(echo "$TAGS_JSON" | jq -r '.TagSet | length')" -gt 0 ]; then
+            TAGS_HCL=$(echo "$TAGS_JSON" | jq -r '
+              .TagSet | map("    \(.Key) = \"\(.Value)\"") | join("\n") |
+              "\n  tags = {\n" + . + "\n  }"
+            ')
+          fi
+          cat > "$FILE" << TFEOF
+          resource "aws_s3_bucket" "${{ inputs.resource_name }}" {
+            bucket = "${{ inputs.resource_id }}"
+          $TAGS_HCL
+          }
+          TFEOF
+          echo "Config with tags:"
+          cat "$FILE"
+
+      - name: Terraform Plan
+        run: terraform plan -input=false -no-color -var-file=terraform.tfvars
+        continue-on-error: true
+
       - name: Commit and push
         if: steps.create_config.outputs.created == 'true'
         run: |
@@ -114,6 +139,6 @@ jobs:
           if git diff --staged --quiet; then
             echo "No changes to commit"
           else
-            git commit -m "Import ${{ inputs.resource_type }}.${{ inputs.resource_name }} (${{ inputs.resource_id }})"
+            git commit -m "Import ${{ inputs.resource_type }}.${{ inputs.resource_name }} (${{ inputs.resource_id }}) з описом"
             git push
           fi
